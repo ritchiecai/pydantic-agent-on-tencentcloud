@@ -24,10 +24,16 @@ jobs:
           LABEL="${{ github.event.label.name }}"
 
           post() {  # $1=url  $2=gh-event-header
+            echo "--- POST $1 ($2) ---"
             curl -sS -X POST "$1" \
               -H "Content-Type: application/json" \
               -H "X-GitHub-Event: $2" \
-              --data @"$GITHUB_EVENT_PATH"
+              --data @"$GITHUB_EVENT_PATH" \
+              -D /tmp/resp.headers \
+              -o /tmp/resp.body \
+              -w "HTTP_STATUS=%{http_code}\n"
+            echo "--- response headers ---"; cat /tmp/resp.headers | head -30
+            echo "--- response body (first 300 chars) ---"; head -c 300 /tmp/resp.body; echo
           }
 
           case "$LABEL" in
