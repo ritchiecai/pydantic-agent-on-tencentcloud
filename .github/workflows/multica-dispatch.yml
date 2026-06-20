@@ -1,0 +1,40 @@
+name: Multica role dispatch
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Route to Multica autopilot
+        env:
+          # secrets 用 sync 脚本批量推到各私有仓库的仓库级 Secrets
+          AP_DESIGN:  ${{ secrets.MULTICA_AP_DESIGN_URL }}
+          AP_PLAN:    ${{ secrets.MULTICA_AP_PLAN_URL }}
+          AP_DEV:     ${{ secrets.MULTICA_AP_DEV_URL }}
+          AP_TEST:    ${{ secrets.MULTICA_AP_TEST_URL }}
+          AP_ACCEPT:  ${{ secrets.MULTICA_AP_ACCEPT_URL }}
+        run: |
+          set -euo pipefail
+          LABEL="${{ github.event.label.name }}"
+
+          post() {  # $1=url  $2=gh-event-header
+            curl -sS -X POST "$1" \
+              -H "Content-Type: application/json" \
+              -H "X-GitHub-Event: $2" \
+              --data @"$GITHUB_EVENT_PATH"
+          }
+
+          case "$LABEL" in
+            needs-design)                    post "$AP_DESIGN" issues ;;
+            needs-plan)                      post "$AP_PLAN"   issues ;;
+            ready-for-dev|changes-requested) post "$AP_DEV"    issues ;;
+            ready-for-test)                  post "$AP_TEST"   issues ;;
+            ready-for-acceptance)            post "$AP_ACCEPT" issues ;;
+            *) echo "label $LABEL not routed" ;;
+          esac
