@@ -1,0 +1,21 @@
+############################################################
+# terraform.tfvars 占位示例
+#
+# ⚠️ 密钥变量（tencentcloud_secret_id / tencentcloud_secret_key /
+#    model_api_key）请勿写真实值到本文件！本文件仅放非密钥占位。
+#    密钥统一经环境变量注入：
+#      export TF_VAR_tencentcloud_secret_id=...
+#      export TF_VAR_tencentcloud_secret_key=...
+#      export TF_VAR_model_api_key=...
+############################################################
+
+region             = "ap-guangzhou"
+availability_zone  = "ap-guangzhou-3"
+cvm_instance_type  = "SA2.MEDIUM4"
+cvm_image_id       = "img-487zeit5" # 替换为本账号可用的 Ubuntu 22.04 image_id
+model_string       = "openai:gpt-4o-mini"
+ssl_certificate_id = ""             # 留空走 HTTP:80；补证书后填腾讯云证书 ID 启用 HTTPS:443
+
+# <set via TF_VAR_tencentcloud_secret_id, do NOT commit>
+# <set via TF_VAR_tencentcloud_secret_key, do NOT commit>
+# <set via TF_VAR_model_api_key, do NOT commit>
