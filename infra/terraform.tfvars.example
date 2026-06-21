@@ -13,7 +13,10 @@ region             = "ap-guangzhou"
 availability_zone  = "ap-guangzhou-3"
 cvm_instance_type  = "SA2.MEDIUM4"
 cvm_image_id       = "img-487zeit5" # 替换为本账号可用的 Ubuntu 22.04 image_id
+model_provider     = "openai"        # openai（默认）| deepseek | zhipu
 model_string       = "openai:gpt-4o-mini"
+# 切 DeepSeek：model_provider="deepseek", model_string="deepseek-chat"
+# 切 智谱：    model_provider="zhipu",    model_string="glm-4"
 ssl_certificate_id = ""             # 留空走 HTTP:80；补证书后填腾讯云证书 ID 启用 HTTPS:443
 
 # <set via TF_VAR_tencentcloud_secret_id, do NOT commit>
