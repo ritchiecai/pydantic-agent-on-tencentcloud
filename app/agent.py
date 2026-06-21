@@ -6,7 +6,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 # 智谱 GLM 的 OpenAI 兼容端点（代码默认值；可用 ZHIPU_BASE_URL 覆盖）。
-_ZHIPU_DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4/"
+_ZHIPU_DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/coding/paas/v4"
 
 
 def _model_name_only(value: str) -> str:
