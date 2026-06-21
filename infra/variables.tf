@@ -36,9 +36,9 @@ variable "cvm_instance_type" {
 }
 
 variable "cvm_image_id" {
-  description = "CVM 镜像 ID（腾讯云公共 Ubuntu 22.04）。不同账号/地域可用 image_id 不同，按需替换。"
+  description = "CVM 镜像 ID。留空则自动查询当前账号可用的 Ubuntu 22.04 公共镜像。"
   type        = string
-  default     = "img-487zeit5" # 占位：Ubuntu Server 22.04 LTS（公共镜像），请替换为本账号可用的 image_id
+  default     = ""
 }
 
 variable "model_api_key" {

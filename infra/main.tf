@@ -30,9 +30,17 @@ provider "tencentcloud" {
 # ⚠️ Terraform 不允许在 source 里用变量，故每个模块 source 都写全字面值。
 locals {
   common_tags = {
-    project = "pydantic-agent-on-tencentcloud"
-    managed = "terraform"
+    app         = "pydantic-agent-on-tencentcloud"
+    provisioner = "terraform"
+    创建者         = "ritchiecai"
   }
+}
+
+# 动态查询当前账号可用的 Ubuntu 22.04 公共镜像，避免硬编码 image_id
+# 在不同账号/地域失效（占位镜像 img-487zeit5 在本账号无 RunInstances 权限）。
+data "tencentcloud_images" "ubuntu" {
+  image_name_regex = "TencentOS Server 4"
+  image_type       = ["PUBLIC_IMAGE"]
 }
 
 ############################################################
@@ -41,10 +49,11 @@ locals {
 module "network" {
   source = "git::https://github.com/terraform-tencentcloud-modules/tencentcloud-landing-zone-booster.git//modules/vpc?ref=v0.1.0"
 
-  vpc_region = var.region
-  vpc_name   = "agent-vpc"
-  vpc_cidr   = "10.0.0.0/16"
-  tags       = local.common_tags
+  vpc_region       = var.region
+  vpc_name         = "agent-vpc"
+  vpc_cidr         = "10.0.0.0/16"
+  vpc_is_multicast = false # 账号未开通多播，关闭以避免 UnauthorizedOperation
+  tags             = local.common_tags
 }
 
 ############################################################
@@ -53,11 +62,12 @@ module "network" {
 module "subnet" {
   source = "git::https://github.com/terraform-tencentcloud-modules/tencentcloud-landing-zone-booster.git//modules/vpc-subnet?ref=v0.1.0"
 
-  vpc_id            = module.network.vpc_id
-  subnet_name       = "agent-subnet"
-  subnet_cidr       = "10.0.1.0/24"
-  availability_zone = var.availability_zone
-  tags              = local.common_tags
+  vpc_id              = module.network.vpc_id
+  subnet_name         = "agent-subnet"
+  subnet_cidr         = "10.0.1.0/24"
+  availability_zone   = var.availability_zone
+  subnet_is_multicast = false # 账号未开通多播，与 VPC 保持一致
+  tags                = local.common_tags
 }
 
 ############################################################
@@ -102,7 +112,7 @@ module "nat_gateway" {
   vpc_id                 = module.network.vpc_id
   nat_gateway_bandwidth  = 100
   nat_eips               = ["agent-nat-eip"]
-  nat_gateway_concurrent = 300000
+  nat_gateway_concurrent = 1000000
   tags                   = local.common_tags
 
   routable_attachments = {
@@ -122,15 +132,16 @@ module "cvm" {
 
   instance_name     = "agent-cvm"
   availability_zone = var.availability_zone
-  # 腾讯云公共镜像 Ubuntu Server 22.04 LTS（按需替换为账号内可用 image_id）
-  image_id           = var.cvm_image_id
-  instance_type      = var.cvm_instance_type
+  # 留空 cvm_image_id 时自动用 data.tencentcloud_images 查询当前账号可用镜像
+  image_id      = var.cvm_image_id != "" ? var.cvm_image_id : data.tencentcloud_images.ubuntu.images[0].image_id
+  instance_type = var.cvm_instance_type
   system_disk_type   = "CLOUD_PREMIUM"
   system_disk_size   = 50
-  allocate_public_ip = false
-  vpc_id             = module.network.vpc_id
-  subnet_id          = module.subnet.subnet_id
-  security_group_ids = [module.security_group.id]
+  allocate_public_ip         = false
+  internet_max_bandwidth_out = 0 # 不分配公网 IP，带宽须置 0，否则 API 报 InvalidPermission
+  vpc_id                     = module.network.vpc_id
+  subnet_id                  = module.subnet.subnet_id[0]
+  security_group_ids         = [module.security_group.id]
 
   # user-data：安装应用 + 写密钥 + 起 systemd（脚本见 scripts/deploy_app.sh）。
   # 密钥经 user_data_raw 注入，落地后立即 chmod 600 并自我删除（见 deploy_app.sh）。

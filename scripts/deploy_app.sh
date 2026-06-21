@@ -33,6 +33,15 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 # 3) 拉取应用代码 + 装依赖。
+# 确保 git 可用（精简镜像可能未预装），否则后续 clone 会因 set -e 中断。
+if ! command -v git >/dev/null 2>&1; then
+  yum install -y git
+fi
+if [ -d "$APP_DIR" ] && [ ! -d "$APP_DIR/.git" ]; then
+  # 目录存在但不是 git 仓库，清掉残留后重新 clone，避免 uv sync 跑在脏目录上。
+  rm -rf "$APP_DIR"
+fi
+install -d -m 0755 "$APP_DIR"
 if [ ! -d "$APP_DIR/.git" ]; then
   git clone https://github.com/ritchiecai/pydantic-agent-on-tencentcloud.git "$APP_DIR"
 else
