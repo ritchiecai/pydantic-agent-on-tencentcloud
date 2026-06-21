@@ -36,7 +36,9 @@ uv run uvicorn app.main:app --port 8000
 curl localhost:8000/healthz          # -> {"status":"ok"}
 ```
 
-调 `/chat` 需要模型 provider 的 API key（默认 OpenAI）：
+调 `/chat` 需要模型 provider 的 API key（默认 OpenAI）。两种方式二选一：
+
+**方式 A：命令前缀注入**（适合一次性试用）
 
 ```bash
 MODEL_API_KEY=sk-xxx uv run uvicorn app.main:app --port 8000
@@ -45,8 +47,28 @@ curl -X POST localhost:8000/chat -H 'Content-Type: application/json' \
 # -> {"reply":"...含 ISO 时间..."}（证明 server_time 工具被调用）
 ```
 
+**方式 B：用 `.env` 文件**（推荐本地长期开发）
+
+```bash
+cp .env.example .env
+# 编辑 .env，填入真实 MODEL_API_KEY 等
+touch .env   # 仅本地，勿提交
+uv run uvicorn app.main:app --port 8000
+```
+
+`.env` 是本仓库根目录的本地配置文件：应用启动时自动加载（`app/__init__.py` 调
+`python-dotenv` 的 `load_dotenv()`），把其中的 `MODEL_*` 等键值读进 `os.environ`，
+不必再拼命令前缀。优先级为 **真实进程环境变量 > `.env` 文件 > 代码内置默认值**
+（`override=False`，即命令行/部署注入的环境变量永远优先于 `.env`，不会被本地文件覆盖）。
+
+> `.env` 含真实密钥，已被 `.gitignore` 忽略，**绝不提交**；仓库只追踪不含密钥的
+> `.env.example` 模板。
+>
+> 部署侧（腾讯云 CVM）不受影响——仍由 Terraform 写入 `/etc/agent/env`，systemd
+> `EnvironmentFile` 注入，与本地的 `.env`（按 CWD 查找）路径不同、互不干扰。
+
 模型串可经 `MODEL_STRING` 切换 provider，例如 `openai:gpt-4o-mini`、
-国内可达 provider 等。
+国内可达 provider 等（同样可写进 `.env`）。
 
 ### 切换到智谱（GLM）/ DeepSeek
 

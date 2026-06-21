@@ -25,5 +25,6 @@ crash.*.log
 # 本地密钥 / 环境文件（绝不要提交）
 ############################################################
 *.env
+!*.env.example
 infra/terraform.tfvars
 /etc/agent/
