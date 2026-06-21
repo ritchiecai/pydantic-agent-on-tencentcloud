@@ -135,8 +135,9 @@ module "cvm" {
   # user-data：安装应用 + 写密钥 + 起 systemd（脚本见 scripts/deploy_app.sh）。
   # 密钥经 user_data_raw 注入，落地后立即 chmod 600 并自我删除（见 deploy_app.sh）。
   user_data_raw = templatefile("${path.module}/../scripts/deploy_app.sh.tftpl", {
-    model_string  = var.model_string
-    model_api_key = var.model_api_key
+    model_provider = var.model_provider
+    model_string   = var.model_string
+    model_api_key  = var.model_api_key
   })
 
   tags = local.common_tags

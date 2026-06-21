@@ -11,6 +11,7 @@ set -euo pipefail
 # --- 1. env file (secrets) ---------------------------------------------------
 install -d -m 0750 /etc/agent
 cat >/etc/agent/env <<'ENVEOF'
+MODEL_PROVIDER=${model_provider}
 MODEL_STRING=${model_string}
 MODEL_API_KEY=${model_api_key}
 ENVEOF

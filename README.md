@@ -48,6 +48,34 @@ curl -X POST localhost:8000/chat -H 'Content-Type: application/json' \
 模型串可经 `MODEL_STRING` 切换 provider，例如 `openai:gpt-4o-mini`、
 国内可达 provider 等。
 
+### 切换到智谱（GLM）/ DeepSeek
+
+通过 `MODEL_PROVIDER` 选择模型后端，零新依赖（DeepSeek 走 pydantic-ai 原生 provider，
+智谱走 OpenAI 兼容接口）。**API key 仍统一用 `MODEL_API_KEY` 一个变量**——DeepSeek
+和智谱都只用它，无需单独设 `DEEPSEEK_API_KEY` / `ZHIPU_API_KEY`（后者仅作高级用户
+本地实验回退）。
+
+| `MODEL_PROVIDER` | `MODEL_STRING` 示例 | 说明 |
+|---|---|---|
+| `openai`（默认） | `openai:gpt-4o-mini` | 向后兼容现状 |
+| `deepseek` | `deepseek-chat` | pydantic-ai 原生 provider |
+| `zhipu` | `glm-4` | OpenAI 兼容端点（`open.bigmodel.cn`） |
+
+本地：
+
+```bash
+# DeepSeek
+MODEL_PROVIDER=deepseek MODEL_STRING=deepseek-chat MODEL_API_KEY=sk-xxx uv run uvicorn app.main:app --port 8000
+# 智谱
+MODEL_PROVIDER=zhipu MODEL_STRING=glm-4 MODEL_API_KEY=sk-xxx uv run uvicorn app.main:app --port 8000
+```
+
+部署时把 `MODEL_PROVIDER` 也写进 Terraform（对应 `infra/` 的 `model_provider` 变量，
+默认 `openai`，见 `infra/terraform.tfvars.example`）。
+
+> 注意：`deepseek-reasoner` 等模型对工具调用支持有限；智谱个别高级字段可能不完全
+> 兼容 OpenAI 语义——遇到异常优先换 `deepseek-chat` / `glm-4` 这类主流模型。
+
 ### 测试
 
 ```bash

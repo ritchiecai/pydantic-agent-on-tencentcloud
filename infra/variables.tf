@@ -53,6 +53,12 @@ variable "model_string" {
   default     = "openai:gpt-4o-mini"
 }
 
+variable "model_provider" {
+  description = "模型后端 provider：openai（默认）| deepseek | zhipu。决定 MODEL_PROVIDER 环境变量。"
+  type        = string
+  default     = "openai"
+}
+
 variable "ssl_certificate_id" {
   description = "腾讯云 SSL 证书 ID（用于 CLB HTTPS:443 监听器）。留空则只起 HTTP:80（MVP 允许）。"
   type        = string
