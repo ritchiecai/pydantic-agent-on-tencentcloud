@@ -1,0 +1,18 @@
+[project]
+name = "pydantic-agent-on-tencentcloud"
+version = "0.1.0"
+description = "基于 pydantic-ai 的 agent MVP，部署在腾讯云（Terraform 管理）。"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic-ai",
+    "fastapi",
+    "uvicorn",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

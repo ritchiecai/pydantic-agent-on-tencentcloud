@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Terraform user-data template (rendered by `templatefile` in infra/main.tf).
+# Runs ONCE on the CVM at first boot. It:
+#   1. writes the model env file (mode 0600),
+#   2. installs uv + clones the app repo + syncs deps,
+#   3. installs a systemd unit that runs uvicorn,
+#   4. deletes itself (and the rendered script) to shrink the secret surface.
+# Idempotent enough to re-run; designed for Ubuntu 22.04 cloud-init.
+set -euo pipefail
+
+# --- 1. env file (secrets) ---------------------------------------------------
+install -d -m 0750 /etc/agent
+cat >/etc/agent/env <<'ENVEOF'
+MODEL_STRING=${model_string}
+MODEL_API_KEY=${model_api_key}
+ENVEOF
+chmod 600 /etc/agent/env
+
+# --- 2. app code + deps ------------------------------------------------------
+export HOME=/root
+# Install uv if missing.
+if ! command -v uv >/dev/null 2>&1; then
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+fi
+# uv on PATH for non-interactive shells.
+export PATH="$HOME/.local/bin:$PATH"
+
+APP_DIR=/opt/agent
+if [ ! -d "$APP_DIR/.git" ]; then
+  git clone https://github.com/ritchiecai/pydantic-agent-on-tencentcloud.git "$APP_DIR"
+else
+  git -C "$APP_DIR" pull --ff-only
+fi
+cd "$APP_DIR"
+uv sync
+
+# --- 3. systemd unit ---------------------------------------------------------
+cat >/etc/systemd/system/agent.service <<'UNITEOF'
+[Unit]
+Description=pydantic-ai agent MVP (FastAPI + uvicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/agent
+EnvironmentFile=/etc/agent/env
+ExecStart=/root/.local/bin/uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
+
+systemctl daemon-reload
+systemctl enable --now agent.service
+
+# --- 4. shrink secret surface -----------------------------------------------
+# Cloud-init keeps user-data in /var/lib/cloud/; remove our rendered copy so the
+# key is not lying around as a world-readable file. The env file (0600) stays.
+rm -f /var/lib/cloud/instance/user-data.txt 2>/dev/null || true
+rm -f "$0" || true
