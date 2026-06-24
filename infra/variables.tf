@@ -54,9 +54,15 @@ variable "model_string" {
 }
 
 variable "model_provider" {
-  description = "模型后端 provider：openai（默认）| deepseek | zhipu。决定 MODEL_PROVIDER 环境变量。"
+  description = "模型后端 provider：openai（默认）| deepseek | zhipu | tokenhub。决定 MODEL_PROVIDER 环境变量。"
   type        = string
   default     = "openai"
+}
+
+variable "model_base_url" {
+  description = "OpenAI 兼容端点 base_url（写入 CVM 的 MODEL_BASE_URL）。留空走 provider 代码默认值；tokenhub 等自定义端点在此覆盖。"
+  type        = string
+  default     = ""
 }
 
 variable "ssl_certificate_id" {

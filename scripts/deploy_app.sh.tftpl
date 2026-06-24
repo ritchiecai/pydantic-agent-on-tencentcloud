@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
-# Terraform user-data template (rendered by `templatefile` in infra/main.tf).
-# Runs ONCE on the CVM at first boot. It:
+# TAT command content (rendered by `templatefile` in infra/main.tf, then run by
+# the TencentCloud Automation Tools agent via tencentcloud_tat_command).
+# Runs on the CVM whenever the TAT command is invoked. It:
 #   1. writes the model env file (mode 0600),
-#   2. installs uv + clones the app repo + syncs deps,
-#   3. installs a systemd unit that runs uvicorn,
-#   4. deletes itself (and the rendered script) to shrink the secret surface.
-# Idempotent enough to re-run; designed for Ubuntu 22.04 cloud-init.
+#   2. installs uv + clones (or pulls) the app repo + syncs deps,
+#   3. installs/refreshes a systemd unit that runs uvicorn.
+# Idempotent: safe to re-invoke from the console/CLI for debugging or redeploy.
 set -euo pipefail
 
 # --- 1. env file (secrets) ---------------------------------------------------
 install -d -m 0750 /etc/agent
+# 应用文件日志目录（LOG_FILE 落点，见下方 env）。
+install -d -m 0750 /var/log/agent
 cat >/etc/agent/env <<'ENVEOF'
 MODEL_PROVIDER=${model_provider}
 MODEL_STRING=${model_string}
 MODEL_API_KEY=${model_api_key}
+MODEL_BASE_URL=${model_base_url}
+LOG_FILE=/var/log/agent/app.log
 ENVEOF
 chmod 600 /etc/agent/env
 
@@ -64,10 +68,9 @@ WantedBy=multi-user.target
 UNITEOF
 
 systemctl daemon-reload
-systemctl enable --now agent.service
+# 重新下发时用 restart 确保新代码/新 env 生效（enable 保证开机自启）。
+systemctl enable agent.service
+systemctl restart agent.service
 
-# --- 4. shrink secret surface -----------------------------------------------
-# Cloud-init keeps user-data in /var/lib/cloud/; remove our rendered copy so the
-# key is not lying around as a world-readable file. The env file (0600) stays.
-rm -f /var/lib/cloud/instance/user-data.txt 2>/dev/null || true
-rm -f "$0" || true
+# env 文件以 0600 保存密钥。TAT agent 执行结束后会自动清理临时脚本副本，
+# 渲染内容（含密钥）不会作为 world-readable 文件残留在机器上。

@@ -85,3 +85,32 @@ def test_build_model_zhipu_without_key_raises(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.delenv("ZHIPU_API_KEY", raising=False)
     with pytest.raises(RuntimeError):
         build_model()
+
+
+def test_build_model_tokenhub_returns_openai_chat_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """MODEL_PROVIDER=tokenhub 且 MODEL_BASE_URL 已设时返回 OpenAIChatModel（OpenAI 兼容协议）。"""
+    monkeypatch.setenv("MODEL_PROVIDER", "tokenhub")
+    monkeypatch.setenv("MODEL_API_KEY", "x")
+    monkeypatch.setenv("MODEL_STRING", "gpt-4o-mini")
+    monkeypatch.setenv("MODEL_BASE_URL", "http://tokenhub.example/tokenhub/v1")
+    model = build_model()
+    assert isinstance(model, OpenAIChatModel)
+
+
+def test_build_model_tokenhub_without_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """MODEL_PROVIDER=tokenhub 且无 MODEL_API_KEY/TOKENHUB_API_KEY 时 fail-fast 抛 RuntimeError。"""
+    monkeypatch.setenv("MODEL_PROVIDER", "tokenhub")
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    monkeypatch.delenv("TOKENHUB_API_KEY", raising=False)
+    monkeypatch.setenv("MODEL_BASE_URL", "http://tokenhub.example/tokenhub/v1")
+    with pytest.raises(RuntimeError):
+        build_model()
+
+
+def test_build_model_tokenhub_without_base_url_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """MODEL_PROVIDER=tokenhub 且缺 MODEL_BASE_URL 时 fail-fast 抛 RuntimeError。"""
+    monkeypatch.setenv("MODEL_PROVIDER", "tokenhub")
+    monkeypatch.setenv("MODEL_API_KEY", "x")
+    monkeypatch.delenv("MODEL_BASE_URL", raising=False)
+    with pytest.raises(RuntimeError):
+        build_model()
