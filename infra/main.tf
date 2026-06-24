@@ -230,16 +230,30 @@ module "clb_listener_http" {
   # 模块 validation 在该变量为 null 时报错，显式给个合法值。
   session_expire_time = 30
 
-  listener_target_instance = {
-    enabled = true
-    targets = [
-      {
-        instance_id = module.cvm.instance_id
-        port        = 8000
-        weight      = 10
-      },
-    ]
-  }
+  # 七层(HTTP/HTTPS)监听器必须通过转发规则(location)绑定后端：
+  # listener_target_instance 仅对四层(TCP/UDP)生效，七层需用 listener_rules。
+  listener_rules = [
+    {
+      domain = module.clb.clb_vips[0]
+      url    = "/"
+
+      health_check = {
+        enabled = true
+        path    = "/healthz"
+      }
+
+      target_instance = {
+        enabled = true
+        targets = [
+          {
+            instance_id = module.cvm.instance_id
+            port        = 8000
+            weight      = 10
+          },
+        ]
+      }
+    },
+  ]
 }
 
 module "clb_listener_https" {
@@ -258,14 +272,27 @@ module "clb_listener_https" {
     cert_id  = var.ssl_certificate_id
   }
 
-  listener_target_instance = {
-    enabled = true
-    targets = [
-      {
-        instance_id = module.cvm.instance_id
-        port        = 8000
-        weight      = 10
-      },
-    ]
-  }
+  # 七层监听器需用 listener_rules 创建转发规则并绑定后端（详见 HTTP 监听器说明）。
+  listener_rules = [
+    {
+      domain = module.clb.clb_vips[0]
+      url    = "/"
+
+      health_check = {
+        enabled = true
+        path    = "/healthz"
+      }
+
+      target_instance = {
+        enabled = true
+        targets = [
+          {
+            instance_id = module.cvm.instance_id
+            port        = 8000
+            weight      = 10
+          },
+        ]
+      }
+    },
+  ]
 }
