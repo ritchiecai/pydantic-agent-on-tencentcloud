@@ -82,6 +82,12 @@ uv run uvicorn app.main:app --port 8000
 | `openai`（默认） | `openai:gpt-4o-mini` | 向后兼容现状 |
 | `deepseek` | `deepseek-chat` | pydantic-ai 原生 provider |
 | `zhipu` | `glm-4` | OpenAI 兼容端点（`open.bigmodel.cn`） |
+| `tokenhub` | `gpt-4o-mini` | OpenAI 兼容端点，**须额外设 `MODEL_BASE_URL`** |
+
+> `tokenhub` 走 OpenAI 兼容协议，但端点不固定，需用 `MODEL_BASE_URL` 指定其
+> base_url（如 `http://<host>/tokenhub/v1`）；部署侧对应 `infra/` 的 `model_base_url`
+> 变量（见 `infra/terraform.tfvars.example`）。`openai`/`deepseek`/`zhipu` 无需设置，
+> 留空即走各自代码默认端点。
 
 本地：
 
@@ -131,8 +137,13 @@ terraform apply
 terraform output -raw service_url  # -> http(s)://<CLB VIP>
 ```
 
-CVM 首次启动时由 user-data 自动 `git clone` 本仓库 → `uv sync` → 安装 systemd
-服务 `agent`（监听 8000）。CLB 终止 HTTPS（无证书时退化为 HTTP:80）并转发到 CVM:8000。
+CVM 创建后由 TAT（腾讯云自动化助手）下发部署命令：`git clone` 本仓库 → `uv sync`
+→ 安装并启动 systemd 服务 `agent`（监听 8000）。CLB 终止 HTTPS（无证书时退化为
+HTTP:80）并转发到 CVM:8000。
+
+> TAT 部署相比 user-data 可在控制台/CLI 重复执行并查看每次的 stdout/stderr，便于
+> 调试。脚本更新后重新在机器上执行：
+> `terraform apply -replace=tencentcloud_tat_invocation_invoke_attachment.deploy_app`。
 
 ### 端到端验证
 
@@ -142,6 +153,25 @@ curl -X POST "$URL/chat" -H 'Content-Type: application/json' \
   -d '{"message":"现在几点？"}'
 # -> {"reply":"...含时间字符串..."}，证明 server_time 工具在腾讯云 CVM 上被调用
 ```
+
+### 日志
+
+应用通过标准库 `logging` 输出日志，是否落地文件由 `LOG_FILE` 决定：
+
+- **不设 `LOG_FILE`**（本地默认）：仅输出到 stdout，沿用 uvicorn 默认行为。
+- **设了 `LOG_FILE`**：用 `RotatingFileHandler` 把应用日志与 uvicorn 的访问/错误
+  日志一并写入该文件，按大小轮转（默认 10MB × 5 份，可经 `LOG_MAX_BYTES` /
+  `LOG_BACKUP_COUNT` 调整）。`/chat` 仅记录消息长度，不落盘正文，避免敏感信息入日志。
+
+部署侧由 `deploy_app.sh.tftpl` 固定写入 `LOG_FILE=/var/log/agent/app.log` 并创建
+`/var/log/agent` 目录，因此 CVM 上既能 `journalctl -u agent` 看 systemd 日志，也能
+直接查看文件：
+
+```bash
+tail -f /var/log/agent/app.log
+```
+
+> 本地若想试文件日志：在 `.env` 里取消注释 `LOG_FILE`（见 `.env.example`）。
 
 ### HTTPS 证书
 
@@ -180,8 +210,9 @@ terraform destroy
 ```
 .
 ├── app/
-│   ├── agent.py        # pydantic-ai Agent + server_time 工具
-│   └── main.py         # FastAPI: /chat, /healthz
+│   ├── agent.py            # pydantic-ai Agent + server_time 工具
+│   ├── logging_config.py   # 可选文件日志（LOG_FILE 开关）
+│   └── main.py             # FastAPI: /chat, /healthz
 ├── tests/
 │   └── test_agent.py   # TestModel 无网单测
 ├── infra/
@@ -191,5 +222,5 @@ terraform destroy
 │   └── terraform.tfvars.example
 └── scripts/
     ├── deploy_app.sh        # 手工 SSH 部署 / systemd 安装
-    └── deploy_app.sh.tftpl  # Terraform user-data 模板
+    └── deploy_app.sh.tftpl  # Terraform TAT command 模板（部署脚本）
 ```

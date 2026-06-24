@@ -17,6 +17,11 @@ terraform {
       # landing-zone-booster v0.1.0 模块要求 >= 1.81.174
       version = ">= 1.81.174"
     }
+    # time_sleep：等待 CVM 的 TAT agent 就绪后再下发部署命令。
+    time = {
+      source  = "hashicorp/time"
+      version = ">= 0.9"
+    }
   }
 }
 
@@ -36,9 +41,9 @@ locals {
   }
 }
 
-# 动态查询当前账号可用的 Ubuntu 22.04 公共镜像，避免硬编码 image_id
+# 动态查询当前账号可用的 tencentos 22.04 公共镜像，避免硬编码 image_id
 # 在不同账号/地域失效（占位镜像 img-487zeit5 在本账号无 RunInstances 权限）。
-data "tencentcloud_images" "ubuntu" {
+data "tencentcloud_images" "tencentos" {
   image_name_regex = "TencentOS Server 4"
   image_type       = ["PUBLIC_IMAGE"]
 }
@@ -98,6 +103,13 @@ module "security_group" {
       cidr_block  = "0.0.0.0/0"
       description = "CVM -> model provider API (HTTPS)"
     },
+    {
+      action      = "ACCEPT"
+      protocol    = "TCP"
+      port        = "80"
+      cidr_block  = "0.0.0.0/0" # tokenhub 等 HTTP 端点（如 http://43.163.42.168/tokenhub/v1）走 80
+      description = "CVM -> model provider API (HTTP, e.g. tokenhub)"
+    },
   ]
 }
 
@@ -125,7 +137,11 @@ module "nat_gateway" {
 
 ############################################################
 # CVM：单实例，跑 FastAPI + pydantic-ai Agent
-# 镜像：腾讯云公共 Ubuntu 22.04；user-data 注入部署脚本与密钥。
+# 镜像：腾讯云公共镜像（默认预装 TAT agent）。
+# 部署不再走 user-data，而是用 TAT（自动化助手）下发命令，见下方
+# tencentcloud_tat_command / tencentcloud_tat_invocation_invoke_attachment：
+#   - 可在控制台/CLI 重复执行、查看每次执行的 stdout/stderr，便于调试；
+#   - 与 cloud-init 一次性、日志难查相比更可观测。
 ############################################################
 module "cvm" {
   source = "git::https://github.com/terraform-tencentcloud-modules/tencentcloud-landing-zone-booster.git//modules/cvm-instance?ref=v0.1.0"
@@ -133,7 +149,7 @@ module "cvm" {
   instance_name     = "agent-cvm"
   availability_zone = var.availability_zone
   # 留空 cvm_image_id 时自动用 data.tencentcloud_images 查询当前账号可用镜像
-  image_id      = var.cvm_image_id != "" ? var.cvm_image_id : data.tencentcloud_images.ubuntu.images[0].image_id
+  image_id      = var.cvm_image_id != "" ? var.cvm_image_id : data.tencentcloud_images.tencentos.images[0].image_id
   instance_type = var.cvm_instance_type
   system_disk_type   = "CLOUD_PREMIUM"
   system_disk_size   = 50
@@ -143,15 +159,51 @@ module "cvm" {
   subnet_id                  = module.subnet.subnet_id[0]
   security_group_ids         = [module.security_group.id]
 
-  # user-data：安装应用 + 写密钥 + 起 systemd（脚本见 scripts/deploy_app.sh）。
-  # 密钥经 user_data_raw 注入，落地后立即 chmod 600 并自我删除（见 deploy_app.sh）。
-  user_data_raw = templatefile("${path.module}/../scripts/deploy_app.sh.tftpl", {
+  tags = local.common_tags
+}
+
+############################################################
+# TAT 部署：替代 user-data
+#
+# 1) time_sleep：CVM RunInstances 返回后，TAT agent 仍需数十秒就绪，
+#    过早 invoke 会报 agent 不在线。等待 60s 再下发。
+# 2) tencentcloud_tat_command：注册部署脚本（content 用 templatefile 渲染，
+#    密钥沿用既有注入路径，不经 TAT 自定义参数历史）。
+# 3) tencentcloud_tat_invocation_invoke_attachment：把命令下发到 CVM 执行。
+#
+# ⚠️ 脚本更新后重新在机器上执行：
+#    terraform apply -replace=tencentcloud_tat_invocation_invoke_attachment.deploy_app
+#    （invoke_attachment 各参数均 ForceNew，replace 即触发重新执行）
+############################################################
+resource "time_sleep" "wait_tat_agent" {
+  depends_on      = [module.cvm]
+  create_duration = "60s"
+}
+
+resource "tencentcloud_tat_command" "deploy_app" {
+  command_name      = "agent-deploy-app"
+  description       = "Deploy pydantic-ai agent: write env, install deps, start systemd"
+  command_type      = "SHELL"
+  working_directory = "/root"
+  username          = "root"
+  timeout           = 1200 # 20 分钟，覆盖 uv sync 拉依赖耗时
+
+  content = templatefile("${path.module}/../scripts/deploy_app.sh.tftpl", {
     model_provider = var.model_provider
     model_string   = var.model_string
     model_api_key  = var.model_api_key
+    model_base_url = var.model_base_url
   })
+}
 
-  tags = local.common_tags
+resource "tencentcloud_tat_invocation_invoke_attachment" "deploy_app" {
+  command_id        = tencentcloud_tat_command.deploy_app.id
+  instance_id       = module.cvm.instance_id
+  username          = "root"
+  working_directory = "/root"
+  timeout           = 1200
+
+  depends_on = [time_sleep.wait_tat_agent]
 }
 
 ############################################################
