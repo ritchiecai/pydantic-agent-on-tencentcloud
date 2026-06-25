@@ -22,6 +22,11 @@ model_base_url     = ""              # 留空走 provider 代码默认值；toke
 #             model_base_url="http://43.163.42.168/tokenhub/v1"（留空则用代码默认值）
 ssl_certificate_id = ""             # 留空走 HTTP:80；补证书后填腾讯云证书 ID 启用 HTTPS:443
 
+# —— 应用源码 git ref（灰度部署）——
+# 默认部署 main；先在分支上验证通过再合主干时，改成分支名（如 feat/xxx）。
+# app_git_repo = "https://github.com/ritchiecai/pydantic-agent-on-tencentcloud.git"
+# app_git_ref  = "main"
+
 # —— 腾讯云 Agent Runtime（代码沙箱，E2B 兼容）——
 sandbox_template = "code-interpreter-v1"   # 控制台「沙箱工具」创建的工具名
 runtime_domain   = ""                       # 留空走代码默认 ap-guangzhou.tencentags.com

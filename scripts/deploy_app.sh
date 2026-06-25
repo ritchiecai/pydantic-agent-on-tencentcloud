@@ -33,22 +33,53 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 # 3) 拉取应用代码 + 装依赖。
+APP_GIT_REPO="${APP_GIT_REPO:-https://github.com/ritchiecai/pydantic-agent-on-tencentcloud.git}"
+APP_GIT_REF="${APP_GIT_REF:-main}"   # 灰度部署：APP_GIT_REF=feat/xxx ./scripts/deploy_app.sh
+echo "[deploy] app source: $APP_GIT_REPO @ $APP_GIT_REF"
+
 # 确保 git 可用（精简镜像可能未预装），否则后续 clone 会因 set -e 中断。
 if ! command -v git >/dev/null 2>&1; then
   yum install -y git
 fi
+# 切换 repo URL 时把现有仓库视作脏目录，重新 clone（避免远端不一致冲突）。
+if [ -d "$APP_DIR/.git" ]; then
+  current_origin=$(git -C "$APP_DIR" remote get-url origin 2>/dev/null || true)
+  if [ -n "$current_origin" ] && [ "$current_origin" != "$APP_GIT_REPO" ]; then
+    echo "[deploy] origin changed ($current_origin -> $APP_GIT_REPO); re-cloning"
+    rm -rf "$APP_DIR"
+  fi
+fi
 if [ -d "$APP_DIR" ] && [ ! -d "$APP_DIR/.git" ]; then
-  # 目录存在但不是 git 仓库，清掉残留后重新 clone，避免 uv sync 跑在脏目录上。
   rm -rf "$APP_DIR"
 fi
 install -d -m 0755 "$APP_DIR"
+
 if [ ! -d "$APP_DIR/.git" ]; then
-  git clone https://github.com/ritchiecai/pydantic-agent-on-tencentcloud.git "$APP_DIR"
+  # 首次 clone：--branch 支持分支/tag；不支持 commit sha → 失败时回退到默认 clone + detach checkout。
+  if git clone --branch "$APP_GIT_REF" --single-branch "$APP_GIT_REPO" "$APP_DIR" 2>/dev/null; then
+    echo "[deploy] cloned $APP_GIT_REF directly"
+  else
+    echo "[deploy] $APP_GIT_REF is not a branch/tag; clone default then checkout"
+    git clone "$APP_GIT_REPO" "$APP_DIR"
+    git -C "$APP_DIR" checkout --detach "$APP_GIT_REF"
+  fi
 else
-  git -C "$APP_DIR" pull --ff-only
+  git -C "$APP_DIR" fetch --tags --prune origin
+  git -C "$APP_DIR" checkout --force "$APP_GIT_REF"
+  if git -C "$APP_DIR" show-ref --verify --quiet "refs/heads/$APP_GIT_REF"; then
+    git -C "$APP_DIR" reset --hard "origin/$APP_GIT_REF"
+  fi
 fi
 cd "$APP_DIR"
-uv sync
+echo "[deploy] checked out: $(git rev-parse --short HEAD) ($APP_GIT_REF)"
+
+# 与 tftpl 一致的 memory-sdk extra 探测兜底。
+if grep -q '^memory-sdk' pyproject.toml 2>/dev/null \
+   || grep -qE '^\s*memory-sdk\s*=' pyproject.toml 2>/dev/null; then
+  uv sync --extra memory-sdk
+else
+  uv sync
+fi
 
 # 4) systemd unit。
 cat >"$UNIT_FILE" <<'UNITEOF'

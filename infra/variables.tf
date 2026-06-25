@@ -114,3 +114,21 @@ variable "ssl_certificate_id" {
   type        = string
   default     = ""
 }
+
+############################################################
+# 应用源码（CVM 上 git clone 哪个仓库 / 哪个 ref）
+#
+# 灰度部署模式：先把功能分支推到远端，部署到 CVM 验证通过后再合 main。
+# 默认部署 main，特性分支验证时 export TF_VAR_app_git_ref=feat/xxx 即可。
+############################################################
+variable "app_git_repo" {
+  description = "应用源码 git 仓库 URL（CVM 上 `git clone` 此地址）。一般无需改，使用 fork 时覆盖。"
+  type        = string
+  default     = "https://github.com/ritchiecai/pydantic-agent-on-tencentcloud.git"
+}
+
+variable "app_git_ref" {
+  description = "应用源码 git ref（分支名 / tag / 完整 commit sha）。默认 main；灰度部署时改为特性分支名。"
+  type        = string
+  default     = "main"
+}

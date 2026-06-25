@@ -234,6 +234,47 @@ bash scripts/provision_sandbox_tool.sh
 > 若 `agr` 版本较旧报 `unknown flag --tool-name`，改用旧参数风格：
 > `--name data-analyst-py --type code-interpreter --network SANDBOX --timeout 10m`。
 
+### 灰度部署：把特性分支先在 CVM 上跑通再合 main
+
+部署脚本（`scripts/deploy_app.sh.tftpl` 与手工 `scripts/deploy_app.sh`）支持把
+**任意 git ref**（分支 / tag / commit sha）部署到 CVM，无需先合 main。这给"先在
+真实环境验证再合主干"的工作流提供了原生支持。
+
+| 变量 | 默认 | 用途 |
+|---|---|---|
+| `app_git_repo`（TF）/ `APP_GIT_REPO`（手工脚本） | `https://github.com/ritchiecai/pydantic-agent-on-tencentcloud.git` | 应用源码仓库 URL，使用 fork 时覆盖 |
+| `app_git_ref`（TF）/ `APP_GIT_REF`（手工脚本） | `main` | 要部署的 git ref（分支 / tag / 完整 commit sha） |
+
+#### Terraform 灰度
+
+```bash
+# 验证特性分支
+export TF_VAR_app_git_ref=feat/tencentcloud-ai-integration
+terraform -chdir=infra apply \
+  -replace=tencentcloud_tat_invocation_invoke_attachment.deploy_app
+
+# 测试通过后合 PR 到 main，把 ref 改回去重发一次（或直接走默认值）
+unset TF_VAR_app_git_ref
+terraform -chdir=infra apply \
+  -replace=tencentcloud_tat_invocation_invoke_attachment.deploy_app
+```
+
+> 部署脚本会智能切换：clone 时若 ref 是分支或 tag 走 `git clone --branch`；若是
+> commit sha 则先 clone 默认分支再 detach checkout。已存在仓库时 `fetch + checkout
+> + reset --hard origin/<ref>`（仅当是分支时），保证幂等可重入。脚本开头会
+> echo 当前 commit sha，便于在 TAT 日志里溯源。
+
+#### 手工 SSH 部署灰度
+
+```bash
+APP_GIT_REF=feat/tencentcloud-ai-integration ./scripts/deploy_app.sh
+```
+
+#### 切换 fork
+
+`TF_VAR_app_git_repo=https://github.com/<your-fork>/pydantic-agent-on-tencentcloud.git`
+即可。脚本检测到 origin URL 变化会自动重新 clone（避免远端不一致冲突）。
+
 ### 新增的腾讯云 AI 产品环境变量
 
 | 变量 | 必填 | 来源 / 默认 |
