@@ -39,6 +39,12 @@ locals {
     provisioner = "terraform"
     创建者         = "ritchiecai"
   }
+
+  # 七层 listener_rule 的 host 头：默认用 CLB 自己的 VIP，销毁阶段或边界
+  # 场景（CLB 尚未分配 VIP）回退到占位 "_"。Tencent CLB 的转发规则 domain
+  # 字段必填且非空；占位值不影响 destroy（资源本身将被销毁），亦避免 plan
+  # 因 [0] 索引越空 list 而硬崩。
+  clb_listener_domain = try(module.clb.clb_vips[0], "_")
 }
 
 # 动态查询当前账号可用的 tencentos 22.04 公共镜像，避免硬编码 image_id
@@ -242,7 +248,7 @@ module "clb_listener_http" {
   # listener_target_instance 仅对四层(TCP/UDP)生效，七层需用 listener_rules。
   listener_rules = [
     {
-      domain = module.clb.clb_vips[0]
+      domain = local.clb_listener_domain
       url    = "/"
 
       health_check = {
@@ -283,7 +289,7 @@ module "clb_listener_https" {
   # 七层监听器需用 listener_rules 创建转发规则并绑定后端（详见 HTTP 监听器说明）。
   listener_rules = [
     {
-      domain = module.clb.clb_vips[0]
+      domain = local.clb_listener_domain
       url    = "/"
 
       health_check = {
