@@ -132,3 +132,9 @@ variable "app_git_ref" {
   type        = string
   default     = "main"
 }
+
+variable "pip_index_url" {
+  description = "uv sync 拉 Python 包用的 PyPI 索引 URL。默认走腾讯云软件源（CVM 内网直连免流，速度最快）。改为空字符串则用 uv 默认 pypi.org（境外，慢）。"
+  type        = string
+  default     = "https://mirrors.cloud.tencent.com/pypi/simple"
+}

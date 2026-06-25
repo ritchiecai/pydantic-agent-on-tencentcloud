@@ -73,6 +73,15 @@ fi
 cd "$APP_DIR"
 echo "[deploy] checked out: $(git rev-parse --short HEAD) ($APP_GIT_REF)"
 
+# PyPI 镜像加速：默认走腾讯云软件源（CVM 内网直连免流）。
+# 本地或非腾讯云环境跑此脚本时，可改 PIP_INDEX_URL 或设为空走默认 pypi.org。
+PIP_INDEX_URL="${PIP_INDEX_URL:-https://mirrors.cloud.tencent.com/pypi/simple}"
+if [ -n "$PIP_INDEX_URL" ]; then
+  export UV_DEFAULT_INDEX="$PIP_INDEX_URL"
+  echo "[deploy] uv index: $PIP_INDEX_URL"
+fi
+export UV_HTTP_TIMEOUT="${UV_HTTP_TIMEOUT:-120}"
+
 # 与 tftpl 一致的 memory-sdk extra 探测兜底。
 if grep -q '^memory-sdk' pyproject.toml 2>/dev/null \
    || grep -qE '^\s*memory-sdk\s*=' pyproject.toml 2>/dev/null; then

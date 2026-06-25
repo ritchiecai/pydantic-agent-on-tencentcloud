@@ -83,6 +83,20 @@ else
 fi
 cd "$APP_DIR"
 echo "[deploy] checked out: $(git rev-parse --short HEAD) ($APP_GIT_REF)"
+# PyPI 镜像加速：CVM 默认走腾讯云软件源（内网直连免流，速度最快）。
+# 留空字符串则不设 UV_DEFAULT_INDEX，回退 uv 默认 pypi.org（境外，慢）。
+PIP_INDEX_URL="${pip_index_url}"
+if [ -n "$PIP_INDEX_URL" ]; then
+  export UV_DEFAULT_INDEX="$PIP_INDEX_URL"
+  echo "[deploy] uv index: $PIP_INDEX_URL"
+fi
+# 慢源场景下默认 30s HTTP 超时偏紧（首字节慢易触发重连），抬到 120s。
+export UV_HTTP_TIMEOUT=120
+# uv 自动安装 Python 解释器（标准库 standalone build）的镜像；走腾讯云
+# 内网下不到时回退默认。本仓库 requires-python>=3.11，CVM 镜像若已有
+# 3.12 解释器则不会触发下载。
+export UV_PYTHON_INSTALL_MIRROR="https://mirrors.cloud.tencent.com/python-build-standalone"
+
 # 启用 memory-sdk extra：vendor/ 下的 wheel 随 git 一并到达 CVM。
 # - 真 wheel 在位：装上腾讯云 Agent Memory 官方 SDK，自动启用 _SdkBackend。
 # - 占位 wheel：装上后运行时仍 ImportError，MemoryClient 自动回退到 _HttpBackend，

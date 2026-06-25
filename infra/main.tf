@@ -207,6 +207,7 @@ resource "tencentcloud_tat_command" "deploy_app" {
     memory_service_id = var.memory_service_id
     app_git_repo      = var.app_git_repo
     app_git_ref       = var.app_git_ref
+    pip_index_url     = var.pip_index_url
   })
 }
 

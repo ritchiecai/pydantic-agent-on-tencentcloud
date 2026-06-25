@@ -275,6 +275,33 @@ APP_GIT_REF=feat/tencentcloud-ai-integration ./scripts/deploy_app.sh
 `TF_VAR_app_git_repo=https://github.com/<your-fork>/pydantic-agent-on-tencentcloud.git`
 即可。脚本检测到 origin URL 变化会自动重新 clone（避免远端不一致冲突）。
 
+### PyPI 镜像加速（CVM 上的 uv sync）
+
+CVM 默认从 PyPI 拉包很慢——pypi.org 在境外。部署脚本默认走**腾讯云软件源**：
+`https://mirrors.cloud.tencent.com/pypi/simple`，CVM 内网直连免流，速度可达
+几十~上百 MB/s。具体注入：
+
+- `deploy_app.sh.tftpl` 在 `uv sync` 前 `export UV_DEFAULT_INDEX=$pip_index_url`
+- `UV_HTTP_TIMEOUT=120`：慢源场景抬高重连窗口
+- `UV_PYTHON_INSTALL_MIRROR=https://mirrors.cloud.tencent.com/python-build-standalone`：
+  uv 自动安装 Python 解释器时也走腾讯云镜像
+
+**覆盖镜像**：
+
+```bash
+# Terraform：换源
+terraform apply -var='pip_index_url=https://pypi.tuna.tsinghua.edu.cn/simple'
+# 或用空字符串走 uv 默认 pypi.org（不推荐）：
+terraform apply -var='pip_index_url='
+
+# 手工 SSH 部署：
+PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple ./scripts/deploy_app.sh
+```
+
+> 本地开发不强制——多数本地网络拉 pypi.org 已足够快，且 `vendor/` 下的本地 wheel
+> 由 `[tool.uv.sources]` 锁定为文件系统路径，不受镜像设置影响。如本地也想加速，
+> 可在 shell 里 `export UV_DEFAULT_INDEX=https://mirrors.cloud.tencent.com/pypi/simple`。
+
 ### 新增的腾讯云 AI 产品环境变量
 
 | 变量 | 必填 | 来源 / 默认 |
