@@ -8,12 +8,33 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "python-dotenv",
+    # 腾讯云 Agent Runtime 兼容 E2B 协议，复用 e2b SDK（设 E2B_DOMAIN 即可指向腾讯云）。
+    "e2b-code-interpreter",
+    # 腾讯云 Agent Memory 客户端走 HTTP 端点（Bearer 鉴权）兜底，沿用 httpx。
+    "httpx",
+]
+
+# 可选 extras。腾讯云数据库 Agent Memory 官方 Python SDK 未上 PyPI，由腾讯云以本地
+# wheel 形式下发，因此声明为 optional：仅 `uv sync --extra memory-sdk` 时安装。
+# wheel 文件需先放到本仓库 vendor/ 目录（见 vendor/README.md）。
+[project.optional-dependencies]
+# 注意：包名取 wheel 文件名前缀对应的 distribution name（``tencentdb_agent_memory_sdk_python``，
+# 规范化后为 ``tencentdb-agent-memory-sdk-python``）。这是腾讯云官方下发 wheel 在
+# METADATA 中实际登记的名字；与官方文档中提到的 pip 安装别名稍有差异，但仅此名能与
+# 本地 wheel 文件的元数据 ``Name`` 字段匹配，避免 ``uv sync`` 报名字不一致错误。
+memory-sdk = [
+    "tencentdb-agent-memory-sdk-python",
 ]
 
 [dependency-groups]
 dev = [
     "pytest",
 ]
+
+# 把上面声明的依赖解析到仓库内的本地 wheel 文件。
+# 注意：``tool.uv.sources`` 仅 uv 识别；``path`` 不支持通配符，需写出完整文件名。
+[tool.uv.sources]
+tencentdb-agent-memory-sdk-python = { path = "vendor/tencentdb_agent_memory_sdk_python-0.1.0-py3-none-any.whl" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

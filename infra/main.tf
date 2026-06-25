@@ -44,7 +44,7 @@ locals {
 # 动态查询当前账号可用的 tencentos 22.04 公共镜像，避免硬编码 image_id
 # 在不同账号/地域失效（占位镜像 img-487zeit5 在本账号无 RunInstances 权限）。
 data "tencentcloud_images" "tencentos" {
-  image_name_regex = "TencentOS Server 4"
+  image_name_regex = "TencentOS Server 3.2"
   image_type       = ["PUBLIC_IMAGE"]
 }
 
@@ -189,10 +189,16 @@ resource "tencentcloud_tat_command" "deploy_app" {
   timeout           = 1200 # 20 分钟，覆盖 uv sync 拉依赖耗时
 
   content = templatefile("${path.module}/../scripts/deploy_app.sh.tftpl", {
-    model_provider = var.model_provider
-    model_string   = var.model_string
-    model_api_key  = var.model_api_key
-    model_base_url = var.model_base_url
+    model_provider    = var.model_provider
+    model_string      = var.model_string
+    model_api_key     = var.model_api_key
+    model_base_url    = var.model_base_url
+    runtime_api_key   = var.runtime_api_key
+    sandbox_template  = var.sandbox_template
+    runtime_domain    = var.runtime_domain
+    memory_endpoint   = var.memory_endpoint
+    memory_api_key    = var.memory_api_key
+    memory_service_id = var.memory_service_id
   })
 }
 

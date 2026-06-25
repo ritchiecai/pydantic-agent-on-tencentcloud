@@ -28,3 +28,6 @@ crash.*.log
 !*.env.example
 infra/terraform.tfvars
 /etc/agent/
+
+# CodeBuddy IDE 工作区缓存（含本地任务/计划，不进 git）
+.codebuddy/

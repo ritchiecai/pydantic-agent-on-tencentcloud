@@ -21,9 +21,31 @@ terraform + pydantic agent on Tencent Cloud.
 
 ## 应用与部署
 
-一个基于 [pydantic-ai](https://ai.pydantic.dev/) 的 agent MVP：FastAPI + uvicorn 暴露
-`/chat`（单轮）与 `/healthz`，内置一个 `server_time` 示范工具；用 Terraform 一键拉起
-腾讯云资源（VPC / 子网 / 安全组 / CVM / NAT 网关 / CLB）。
+一个基于 [pydantic-ai](https://ai.pydantic.dev/) 的 **「智能数据分析助手 / Data Analyst
+Copilot」** showcase：FastAPI + uvicorn 暴露 `/chat`（带 `user_id` + `session_id` 的多用户
+多会话）与 `/healthz`，整合两个腾讯云 AI 产品：
+
+- **腾讯云 Agent Runtime**（代码沙箱，E2B 兼容）—— 让模型生成的分析代码只在腾讯云
+  沙箱内安全执行。
+- **腾讯云数据库 Agent Memory** —— 跨会话个性化记忆（用户偏好、历史结论、团队规范）的
+  检索注入与沉淀写回。
+
+Terraform 一键拉起腾讯云资源（VPC / 子网 / 安全组 / CVM / NAT 网关 / CLB）。
+
+### Showcase 业务流程
+
+单次 `/chat` 流程（详见 [BUB-25 设计](docs/designs/BUB-25-tencentcloud-ai-integration.md)）：
+
+![架构图](docs/assets/architecture.svg)
+
+1. Client 带 `user_id` + `session_id` POST `/chat`。
+2. `app/main.py` 从 Agent Memory 检索个性化上下文并注入 agent 动态 instructions。
+3. agent 按需调用 `run_python` 工具，把分析代码提交 Agent Runtime 代码沙箱执行。
+4. 把本轮 user / assistant 消息写回 Memory 沉淀。
+5. 返回结论。
+
+可插拔集成层 `app/integrations/`：后续接入新的腾讯云 AI 产品（浏览器沙箱、知识库、Skills 等）
+只需新增一个模块 + 在 agent 注册一个工具/上下文来源。
 
 ### 本地运行
 
@@ -33,10 +55,16 @@ terraform + pydantic agent on Tencent Cloud.
 uv sync
 uv run uvicorn app.main:app --port 8000
 # 另一个终端：
-curl localhost:8000/healthz          # -> {"status":"ok"}
+curl localhost:8000/healthz
+# -> {"status":"ok", "integrations": {"sandbox":"configured|missing", "memory":"configured|missing"}}
 ```
 
-调 `/chat` 需要模型 provider 的 API key（默认 OpenAI）。两种方式二选一：
+调 `/chat` 需要：
+- 模型 provider 的 API key（默认 OpenAI；详见下文）。
+- **腾讯云 Agent Runtime API Key 与沙箱工具名**（运行核心能力，缺则 `/chat` 返回 500）。
+- **腾讯云 Agent Memory 实例端点与 API Key**（缺则降级为「无记忆」模式，对话不受影响）。
+
+两种方式二选一：
 
 **方式 A：命令前缀注入**（适合一次性试用）
 
@@ -149,10 +177,126 @@ HTTP:80）并转发到 CVM:8000。
 
 ```bash
 URL=$(terraform -chdir=infra output -raw service_url)
+
+# 基本：server_time 工具
 curl -X POST "$URL/chat" -H 'Content-Type: application/json' \
-  -d '{"message":"现在几点？"}'
-# -> {"reply":"...含时间字符串..."}，证明 server_time 工具在腾讯云 CVM 上被调用
+  -d '{"message":"现在几点？","user_id":"demo","session_id":"s1"}'
+# -> {"reply":"...含时间字符串..."}
+
+# Showcase：触发 Agent Runtime 代码沙箱
+curl -X POST "$URL/chat" -H 'Content-Type: application/json' \
+  -d '{"message":"用 python 计算 1..100 的和并打印结果","user_id":"demo","session_id":"s1"}'
+# -> 模型调用 run_python；reply 含腾讯云沙箱执行结果 5050
+
+# 验证 Memory 跨会话个性化（先告知偏好，再换一个问题）
+curl -X POST "$URL/chat" -H 'Content-Type: application/json' \
+  -d '{"message":"以后给我看销售数据时优先用折线图","user_id":"demo","session_id":"s1"}'
+curl -X POST "$URL/chat" -H 'Content-Type: application/json' \
+  -d '{"message":"我们上个月的销售数据应该怎么呈现？","user_id":"demo","session_id":"s2"}'
+# -> 第二次回答应该会基于跨会话记忆推荐折线图
 ```
+
+### 初次配置：创建 Agent Runtime 沙箱工具
+
+应用启动前，需在腾讯云 Agent Runtime 上**创建一个 `code-interpreter` 类型的沙箱
+工具**——它对应 `e2b-code-interpreter` SDK 的 `template` 参数，即本仓库的
+`SANDBOX_TEMPLATE` 环境变量。
+
+仓库提供一键脚本，自动检测 `agr` CLI 参数风格、创建工具、轮询等待 ACTIVE：
+
+```bash
+# 1. 安装 agr CLI（一次）
+curl -fsSL https://dl.tencentags.com/agr-cli/latest/install.sh | sh
+
+# 2. 注入云账号凭证（agr 用云 SecretId/Key 操作 tool/instance 生命周期；
+#    这与运行时的 E2B_API_KEY 是不同体系，下面环境变量表会再说明）
+agr init --secret-id "$TENCENTCLOUD_SECRET_ID" \
+         --secret-key "$TENCENTCLOUD_SECRET_KEY" --non-interactive
+
+# 3. 创建沙箱工具（默认名 data-analyst-py、code-interpreter 类型、SANDBOX 网络隔离）
+bash scripts/provision_sandbox_tool.sh
+
+# 自定义名字：TOOL_NAME=my-tool bash scripts/provision_sandbox_tool.sh
+# 仅看将执行的命令：bash scripts/provision_sandbox_tool.sh --dry-run
+```
+
+脚本结束时会打印 `SANDBOX_TEMPLATE` 应填入的值，把它写进 `.env` 或
+`infra/terraform.tfvars` 即可。
+
+> 等价的手工命令（脚本就是这一条 + 轮询）：
+> ```bash
+> agr tool create \
+>   --tool-name data-analyst-py \
+>   --tool-type code-interpreter \
+>   --network-configuration '{"NetworkMode":"SANDBOX"}' \
+>   -o json --non-interactive
+> ```
+> 若 `agr` 版本较旧报 `unknown flag --tool-name`，改用旧参数风格：
+> `--name data-analyst-py --type code-interpreter --network SANDBOX --timeout 10m`。
+
+### 新增的腾讯云 AI 产品环境变量
+
+| 变量 | 必填 | 来源 / 默认 |
+|---|---|---|
+| `E2B_API_KEY` | ✅ | Agent Runtime 控制台「API Keys」创建，形如 `ark_xxxx` |
+| `SANDBOX_TEMPLATE` | ✅ | Agent Runtime 控制台「沙箱工具」名称 |
+| `E2B_DOMAIN` | ⛔ | 默认 `ap-guangzhou.tencentags.com`（按地域改） |
+| `SANDBOX_TIMEOUT` / `SANDBOX_RUN_TIMEOUT` | ⛔ | 沙箱存活/单次执行超时秒数，默认 600 / 120 |
+| `AGENT_MEMORY_ENDPOINT` | ✅ | Memory 实例「API 接入」展示的访问地址 |
+| `AGENT_MEMORY_API_KEY` | ✅ | Memory 实例「获取密钥」生成 |
+| `AGENT_MEMORY_SERVICE_ID` | ✅ | Memory 实例 ID（控制台「实例列表」可见，形如 `mem-xxxxxxxx`）；SDK 鉴权头 `x-tdai-service-id` 必需 |
+| `AGENT_MEMORY_TOP_K` / `AGENT_MEMORY_TIMEOUT` | ⛔ | 召回上限/HTTP 超时，默认 5 / 10 |
+
+Terraform 侧两个 sensitive key 经 `TF_VAR_*` 注入：
+
+```bash
+export TF_VAR_runtime_api_key=ark_xxx
+export TF_VAR_memory_api_key=xxx
+# 非敏感项（如 memory_service_id）写进 infra/terraform.tfvars 或保持默认。
+```
+
+### Agent Memory 官方 Python SDK（vendor/ + 可选 extra）
+
+腾讯云数据库 Agent Memory 官方 Python SDK `tencentdb-agent-memory-sdk-python`
+**未上 PyPI**，由腾讯云以本地 wheel 形式下发。本仓库采用 **`vendor/` + uv optional
+extra** 的方式整合，无需手工 `pip install`：
+
+```
+vendor/
+├─ README.md                                                  # 详细说明
+├─ _make_placeholder_wheel.py                                 # 占位 wheel 生成脚本
+└─ tencentdb_agent_memory_sdk_python-0.1.0-py3-none-any.whl   # ← 替换为真 wheel 即可
+```
+
+**默认状态**：仓库自带一个 ~1KB 的**占位 wheel**（metadata 合法、不导出任何模块），
+让 `uv sync` 在没有真 wheel 时也能正常锁定依赖。`MemoryClient` 运行时探测到无可
+import 模块即回退 `_HttpBackend`，功能不受影响。
+
+**启用真 SDK**：
+
+```bash
+# 1) 从腾讯云控制台获取真 wheel（保持文件名不变）：
+#    tencentdb_agent_memory_sdk_python-0.1.0-py3-none-any.whl
+# 2) 覆盖 vendor/ 下的同名占位 wheel
+cp ~/Downloads/tencentdb_agent_memory_sdk_python-0.1.0-py3-none-any.whl vendor/
+# 3) sync 时启用 memory-sdk extra
+uv sync --extra memory-sdk
+```
+
+应用代码零改动，`MemoryClient` 自动切到 `_SdkBackend`：调用官方 SDK 的
+`add_conversation` / `search_conversation`（语义检索），获得 Memory 完整的金字塔
+记忆与向量检索能力。
+
+**部署侧（CVM）**：`scripts/deploy_app.sh.tftpl` 始终用 `uv sync --extra memory-sdk`。
+vendor/ 跟随 `git clone` 一起到达 CVM——真 wheel 已替换时自动启用 SDK，未替换则
+继续走 HTTP 兜底，无需在 Terraform / 部署端做额外配置。
+
+**多用户隔离**：SDK 的「原始对话层」按 `session_id` 维度组织、无独立 `user_id`
+字段。本服务对外保留 `(user_id, session_id)` 双标识，内部合成
+`effective_session_id = "{user_id}:{session_id}"` 作为 SDK 的 `session_id`。调用方
+零感知。
+
+> 详细的版本升级流程与安全须知见 [`vendor/README.md`](vendor/README.md)。
 
 ### 日志
 
@@ -210,17 +354,45 @@ terraform destroy
 ```
 .
 ├── app/
-│   ├── agent.py            # pydantic-ai Agent + server_time 工具
+│   ├── agent.py            # pydantic-ai Agent + AgentDeps + run_python(沙箱工具) + server_time
+│   ├── main.py             # FastAPI: /chat(user_id+session_id)、/healthz 集成探活
 │   ├── logging_config.py   # 可选文件日志（LOG_FILE 开关）
-│   └── main.py             # FastAPI: /chat, /healthz
+│   └── integrations/       # 腾讯云 AI 产品集成层（可插拔，每产品一模块）
+│       ├── config.py       # env 读取与 fail-fast 助手
+│       ├── sandbox.py      # Agent Runtime 代码沙箱（e2b-code-interpreter）
+│       └── memory.py       # Agent Memory 客户端（HTTP 兜底 + 适配器预留 SDK 替换）
 ├── tests/
-│   └── test_agent.py   # TestModel 无网单测
+│   ├── test_agent.py        # Agent + 工具的 TestModel 无网单测
+│   └── test_integrations.py # 集成层 fail-fast / 沙箱生命周期 / 记忆降级 单测
 ├── infra/
 │   ├── main.tf
-│   ├── variables.tf
+│   ├── variables.tf            # 含 runtime_api_key / sandbox_template / memory_* 等
 │   ├── output.tf
 │   └── terraform.tfvars.example
-└── scripts/
-    ├── deploy_app.sh        # 手工 SSH 部署 / systemd 安装
-    └── deploy_app.sh.tftpl  # Terraform TAT command 模板（部署脚本）
+├── scripts/
+│   ├── deploy_app.sh             # 手工 SSH 部署 / systemd 安装
+│   ├── deploy_app.sh.tftpl       # Terraform TAT command 模板（写入 /etc/agent/env）
+│   └── provision_sandbox_tool.sh # 一键创建 Agent Runtime code-interpreter 沙箱工具
+├── vendor/                  # 未上 PyPI 的本地 wheel（默认放占位 wheel，替换为真 wheel 即启用 SDK）
+│   ├── README.md
+│   ├── _make_placeholder_wheel.py
+│   └── tencentdb_agent_memory_sdk_python-0.1.0-py3-none-any.whl
+└── docs/
+    ├── designs/             # 设计文档（含 BUB-25 腾讯云 AI 集成设计）
+    ├── plans/               # 实施计划（含 BUB-26）
+    └── assets/architecture.svg
 ```
+
+### 扩展指引：接入新的腾讯云 AI 产品
+
+每接入一个新产品（如浏览器沙箱、知识库、Skills Registry）：
+
+1. 在 `app/integrations/<product>.py` 新增一个客户端类（构造期 fail-fast、import 期零副作用）。
+2. 在 `app/integrations/__init__.py` 导出该客户端。
+3. 在 `app/agent.py` 注册一个 `@agent.tool` 或在 `@agent.instructions` 注入上下文；通过
+   `AgentDeps` 字段传入客户端实例。
+4. 在 `app/main.py` 编排里按需构造客户端（与现有沙箱/记忆同模式）。
+5. 在 Terraform 与 `.env.example` 增加对应 env；安全组若需新端口/域名同步开放。
+6. 加无网单测（用 fake 后端 monkeypatch SDK / HTTP）。
+
+参考既有的 `sandbox.py` 与 `memory.py` 即是两个完整模板。

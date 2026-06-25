@@ -17,6 +17,14 @@ MODEL_PROVIDER=${model_provider}
 MODEL_STRING=${model_string}
 MODEL_API_KEY=${model_api_key}
 MODEL_BASE_URL=${model_base_url}
+# 腾讯云 Agent Runtime（代码沙箱，E2B 兼容）
+E2B_API_KEY=${runtime_api_key}
+SANDBOX_TEMPLATE=${sandbox_template}
+E2B_DOMAIN=${runtime_domain}
+# 腾讯云数据库 Agent Memory（跨会话记忆）
+AGENT_MEMORY_ENDPOINT=${memory_endpoint}
+AGENT_MEMORY_API_KEY=${memory_api_key}
+AGENT_MEMORY_SERVICE_ID=${memory_service_id}
 LOG_FILE=/var/log/agent/app.log
 ENVEOF
 chmod 600 /etc/agent/env
@@ -46,7 +54,20 @@ else
   git -C "$APP_DIR" pull --ff-only
 fi
 cd "$APP_DIR"
-uv sync
+# 启用 memory-sdk extra：vendor/ 下的 wheel 随 git 一并到达 CVM。
+# - 真 wheel 在位：装上腾讯云 Agent Memory 官方 SDK，自动启用 _SdkBackend。
+# - 占位 wheel：装上后运行时仍 ImportError，MemoryClient 自动回退到 _HttpBackend，
+#   功能等价、不影响 demo。
+# 兼容性兜底：若远端代码尚未含 memory-sdk extra（如部署时的 git ref 落后于本地
+# 改动），uv 0.11+ 会硬报 `Extra ... not defined`。此处探测 pyproject 后回退到
+# 不带 extra 的 sync，避免部署被"未提交改动"卡住。
+if grep -q '^memory-sdk' pyproject.toml 2>/dev/null \
+   || grep -qE '^\s*memory-sdk\s*=' pyproject.toml 2>/dev/null; then
+  uv sync --extra memory-sdk
+else
+  echo "[deploy] memory-sdk extra not declared in pyproject.toml; falling back to plain uv sync"
+  uv sync
+fi
 
 # --- 3. systemd unit ---------------------------------------------------------
 cat >/etc/systemd/system/agent.service <<'UNITEOF'

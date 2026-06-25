@@ -65,6 +65,50 @@ variable "model_base_url" {
   default     = ""
 }
 
+############################################################
+# 腾讯云 Agent Runtime（代码沙箱，E2B 兼容）
+############################################################
+variable "runtime_api_key" {
+  description = "Agent Runtime API Key（腾讯云控制台「API Keys」创建，形如 ark_xxxx；经 TF_VAR_runtime_api_key 注入，写入 CVM 的 /etc/agent/env -> E2B_API_KEY）"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "sandbox_template" {
+  description = "沙箱工具名称（腾讯云 Agent Runtime 控制台「沙箱工具」创建；对应 E2B SDK template 参数）"
+  type        = string
+  default     = ""
+}
+
+variable "runtime_domain" {
+  description = "Agent Runtime 接入域名。留空使用代码默认 ap-guangzhou.tencentags.com。"
+  type        = string
+  default     = ""
+}
+
+############################################################
+# 腾讯云数据库 Agent Memory
+############################################################
+variable "memory_endpoint" {
+  description = "Memory 实例「API 接入」展示的访问地址（控制台 https://console.cloud.tencent.com/tdai/memory ）"
+  type        = string
+  default     = ""
+}
+
+variable "memory_api_key" {
+  description = "Memory 实例 API Key（经 TF_VAR_memory_api_key 注入，写入 CVM 的 /etc/agent/env -> AGENT_MEMORY_API_KEY）"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "memory_service_id" {
+  description = "Memory 实例 ID（控制台「实例列表」可见，形如 mem-xxxxxxxx；写入 CVM 的 /etc/agent/env -> AGENT_MEMORY_SERVICE_ID。SDK 鉴权头 x-tdai-service-id 必需）"
+  type        = string
+  default     = ""
+}
+
 variable "ssl_certificate_id" {
   description = "腾讯云 SSL 证书 ID（用于 CLB HTTPS:443 监听器）。留空则只起 HTTP:80（MVP 允许）。"
   type        = string

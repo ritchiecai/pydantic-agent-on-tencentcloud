@@ -22,6 +22,16 @@ model_base_url     = ""              # 留空走 provider 代码默认值；toke
 #             model_base_url="http://43.163.42.168/tokenhub/v1"（留空则用代码默认值）
 ssl_certificate_id = ""             # 留空走 HTTP:80；补证书后填腾讯云证书 ID 启用 HTTPS:443
 
+# —— 腾讯云 Agent Runtime（代码沙箱，E2B 兼容）——
+sandbox_template = "code-interpreter-v1"   # 控制台「沙箱工具」创建的工具名
+runtime_domain   = ""                       # 留空走代码默认 ap-guangzhou.tencentags.com
+
+# —— 腾讯云数据库 Agent Memory ——
+memory_endpoint   = ""                      # 控制台实例详情页「API 接入」展示
+memory_service_id = ""                      # 实例 ID（形如 mem-xxxxxxxx），控制台「实例列表」可见
+
 # <set via TF_VAR_tencentcloud_secret_id, do NOT commit>
 # <set via TF_VAR_tencentcloud_secret_key, do NOT commit>
 # <set via TF_VAR_model_api_key, do NOT commit>
+# <set via TF_VAR_runtime_api_key, do NOT commit>
+# <set via TF_VAR_memory_api_key, do NOT commit>
